@@ -1,0 +1,22 @@
+Esay-to-use SQL helper class for simple, quick and easy database operations. Usage:
+
+	SQLHelper *sqh = [[SQLHelper alloc] initWithContentsOfFile:@"SomeDB.sqlite3"];
+	NSArray *rows = [sqh executeQuery:@"SELECT name, value FROM fruits"];
+	for (NSDictionary *row in rows) {
+		NSString *name = [row objectForKey:@"name"];
+		NSNumber *value = [row objectForKey:@"value"];
+		NSLog(@"%@ is worth $%@", name, value);
+	}
+	[sqh release];
+
+Result:
+
+	Orange is worth $100000
+	Apple is worth $1000000000
+
+etc.
+
+The actual objects contained by a row dictionary can be NSString, NSNumber,
+NSData and NSNull objects, depending on how the actual value was stored in
+the SQLite database.
+

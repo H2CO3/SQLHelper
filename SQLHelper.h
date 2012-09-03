@@ -1,32 +1,22 @@
 /*
  * SQLHelper.h
- * SQLHelper
- * 
- * Created by Árpád Goretity on 25/12/2011.
+ * SQLEd
+ *
+ * Created by Árpád Goretity on 27/08/2012.
+ * Licensed under the 3-clause BSD license
  */
 
-#import <sqlite3.h>
-#import <Foundation/Foundation.h>
-
+#include <sqlite3.h>
+#include <Foundation/Foundation.h>
 
 @interface SQLHelper: NSObject {
-	sqlite3 *db;
+        sqlite3 *db;
 }
 
-/* The designated initializer */
-- (id) initWithFile:(NSString *)name;
-
-/* Metadata */
-- (NSArray *) tables;
-- (NSArray *) columnsInTable:(NSString *)table;
-
-/* Simple query, this is the base method */
-- (NSArray *) executeQuery:(NSString *)query;
-
-/* Creation/deletion/adding - short-hands */
-- (void) createTable:(NSString *)table withColumns:(NSArray *)columns;
-- (void) deleteTable:(NSString *)table;
-- (void) addRecord:(NSDictionary *)record toTable:(NSString *)table;
+- (id)initWithContentsOfFile:(NSString *)file;
+- (NSArray *)executeQuery:(NSString *)query;
+- (NSArray *)tables;
+- (NSArray *)columnsInTable:(NSString *)table;
 
 @end
 

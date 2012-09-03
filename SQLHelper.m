@@ -1,119 +1,108 @@
 /*
  * SQLHelper.m
- * SQLHelper
- * 
- * Created by Árpád Goretity on 25/12/2011.
+ * SQLEd
+ *
+ * Created by Árpád Goretity on 27/08/2012.
+ * Licensed under the 3-clause BSD license
  */
 
-#import "SQLHelper.h"
-
-int sqlhelper_query_callback(void *ctx, int argc, char **argv, char **columns);
-
-int sqlhelper_query_callback(void *ctx, int argc, char **argv, char **columns)
-{
-	NSMutableArray *ar = (NSMutableArray *)ctx;
-	NSMutableDictionary *row = [[NSMutableDictionary alloc] init];
-	for (int i = 0; i < argc; i++)
-	{
-		NSString *column = [[NSString alloc] initWithUTF8String:columns[i]];
-		NSString *data = [[NSString alloc] initWithFormat:@"%s", argv[i]];
-		[row setObject:data forKey:column];
-		[column release];
-		[data release];
-	}
-	[ar addObject:row];
-	[row release];
-
-	return 0;
-}
-
+#include "SQLHelper.h"
 
 @implementation SQLHelper
 
-/* The designated initializer */
-- (id) initWithFile:(NSString *)name
+- (id)initWithContentsOfFile:(NSString *)file
 {
-	if ((self = [super init]))
-	{
-		const char *fname = [name UTF8String];
-		sqlite3_open(fname, &db);
-	}
-	
-	return self;
+        if ((self = [super init])) {
+                if (sqlite3_open([file UTF8String], &db) != 0) {
+                        [self release];
+                        return nil;
+                }
+        }
+        return self;
 }
 
-- (id) init
+- (void)dealloc
 {
-	/* Initializing without a filename does not make sense */
-	[self release];
-	return NULL;
+        sqlite3_close(db);
+        [super dealloc];
 }
 
-- (void) dealloc
+- (NSArray *)executeQuery:(NSString *)query
 {
-	sqlite3_close(db);
-	[super dealloc];
+        sqlite3_stmt *stmt;
+        const char *tail;
+        sqlite3_prepare_v2(db, [query UTF8String], -1, &stmt, &tail);
+        if (stmt == NULL)
+                return nil;
+
+        int status;
+        int num_cols;
+        int i;
+        int type;
+        id obj;
+        NSString *key;
+        NSMutableArray *result;
+        NSMutableDictionary *row;
+
+        result = [NSMutableArray array];
+        while ((status = sqlite3_step(stmt)) != SQLITE_DONE) {
+                if (status != SQLITE_ROW)
+                        continue;
+
+                row = [NSMutableDictionary dictionary];
+                num_cols = sqlite3_data_count(stmt);
+                for (i = 0; i < num_cols; i++) {
+                        obj = nil;
+                        type = sqlite3_column_type(stmt, i);
+                        switch (type) {
+                        case SQLITE_INTEGER:
+                                obj = [NSNumber numberWithLongLong:sqlite3_column_int64(stmt, i)];
+                                break;
+                        case SQLITE_FLOAT:
+                                obj = [NSNumber numberWithDouble:sqlite3_column_double(stmt, i)];
+                                break;
+                        case SQLITE_TEXT:
+                                obj = [NSString stringWithUTF8String:sqlite3_column_text(stmt, i)];
+                                break;
+                        case SQLITE_BLOB:
+                                obj = [NSData dataWithBytes:sqlite3_column_blob(stmt, i)
+                                	length:sqlite3_column_bytes(stmt, i)];
+                                break;
+                        case SQLITE_NULL:
+                                obj = [NSNull null];
+                                break;
+                        default:
+                                break;
+                        }
+
+                        key = [NSString stringWithUTF8String:sqlite3_column_name(stmt, i)];
+                        [row setObject:obj forKey:key];
+                }
+
+                [result addObject:row];
+        }
+
+        sqlite3_finalize(stmt);
+        return result;
 }
 
-/* Metadata */
-- (NSArray *) tables
+- (NSArray *)tables
 {
-	NSMutableArray *result = [NSMutableArray array];
-	NSArray *info = [self executeQuery:@"SELECT name FROM sqlite_master WHERE type='table'"];
-	int count = [info count];
-	for (int i = 0; i < count; i++)
-	{
-		[result addObject:[(NSDictionary *)[info objectAtIndex:i] objectForKey:@"name"]];
-	}
-	
-	return result;
+        NSArray *descs = [self executeQuery:@"SELECT tbl_name FROM sqlite_master WHERE type = 'table'"];
+        NSMutableArray *result = [NSMutableArray array];
+        for (NSDictionary *row in descs) {
+                NSString *tblName = [row objectForKey:@"tbl_name"];
+                [result addObject:tblName];
+        }
+        return result;
 }
 
-- (NSArray *) columnsInTable:(NSString *)table
+- (NSArray *)columnsInTable:(NSString *)table
 {
-	NSString *query = [[NSString alloc] initWithFormat:@"PRAGMA table_info(%@);", table];
-	NSArray *result = [self executeQuery:query];
-	[query release];
-	return result;
-}
-
-/* Simple query, this is the base method */
-- (NSArray *) executeQuery:(NSString *)query
-{
-	const char *q = [query UTF8String];
-	NSMutableArray *result = [NSMutableArray array];
-	sqlite3_exec(db, q, sqlhelper_query_callback, result, NULL);
-	return result;
-}
-
-/* Creation/deletion/adding - short-hands */
-- (void) createTable:(NSString *)table withColumns:(NSArray *)columns
-{
-	NSString *query = [[NSString alloc] initWithFormat:@"CREATE TABLE %@ (%@);", table, [columns componentsJoinedByString:@", "]];
-	[self executeQuery:query];
-	[query release];
-}
-
-- (void) deleteTable:(NSString *)table
-{
-	NSString *query = [[NSString alloc] initWithFormat:@"DROP TABLE %@;", table];
-       [self executeQuery:query];
-       [query release];
-}
-
-- (void) addRecord:(NSDictionary *)record toTable:(NSString *)table
-{
-	NSArray *keys = [record allKeys];
-	NSMutableArray *values = [[NSMutableArray alloc] init];
-	int count = [record count];
-	for (int i = 0; i < count; i++)
-	{
-		[values addObject:[record objectForKey:[keys objectAtIndex:i]]];
-	}
-	NSString *query = [[NSString alloc] initWithFormat:@"INSERT INTO %@ (%@) VALUES (%@);", table, [keys componentsJoinedByString:@", "], [values componentsJoinedByString:@", "]];
-	[values release];
-	[self executeQuery:query];
-	[query release];
+        char *sql = sqlite3_mprintf("PRAGMA table_info(%q)", [table UTF8String]);
+        NSString *query = [NSString stringWithUTF8String:sql];
+        sqlite3_free(sql);
+        return [self executeQuery:query];        
 }
 
 @end
